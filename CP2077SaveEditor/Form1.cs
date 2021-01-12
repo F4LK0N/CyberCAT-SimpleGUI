@@ -30,6 +30,8 @@ namespace CP2077SaveEditor
         private int saveType = 0;
 
         private Dictionary<Enum, NumericUpDown> attrFields, proficFields;
+        private Dictionary<string, CharacterCustomizationAppearances> appearanceNodes = new Dictionary<string, CharacterCustomizationAppearances>();
+        private CharacterCustomizationAppearances baseAppearanceNode;
 
         public Form1()
         {
@@ -779,6 +781,78 @@ namespace CP2077SaveEditor
                 }
             }
             MessageBox.Show("All item flags cleared.");
+        }
+
+        private void addValueSaveButton_Click(object sender, EventArgs e)
+        {
+            var fileWindow = new OpenFileDialog();
+            fileWindow.Filter = "DAT File|*.dat";
+            if (fileWindow.ShowDialog() == DialogResult.OK)
+            {
+                foreach (string fileName in Directory.GetFiles(Path.GetDirectoryName(fileWindow.FileName)))
+                {
+                    if (Path.GetExtension(fileName) == ".dat")
+                    {
+                        var newSave = new SaveFileHelper(new List<INodeParser> { new CharacterCustomizationAppearancesParser() });
+                        newSave.LoadPCSaveFile(new MemoryStream(File.ReadAllBytes(fileName)));
+                        appearanceNodes.Add(Path.GetFileNameWithoutExtension(fileName), newSave.GetAppearanceContainer());
+                        appearanceSavesBox.Items.Add(fileName);
+                    }
+                    
+                }
+
+                
+            }
+           
+        }
+
+        private void loadBaseSaveButton_Click(object sender, EventArgs e)
+        {
+            var fileWindow = new OpenFileDialog();
+            fileWindow.Filter = "DAT File|*.dat";
+            if (fileWindow.ShowDialog() == DialogResult.OK)
+            {
+                var newSave = new SaveFileHelper(new List<INodeParser>{ new CharacterCustomizationAppearancesParser() });
+                newSave.LoadPCSaveFile(new MemoryStream(File.ReadAllBytes(fileWindow.FileName)));
+                baseAppearanceNode = newSave.GetAppearanceContainer();
+            }
+            loadBaseSaveButton.Text = "Base Save Loaded";
+        }
+
+        private void compareAndDumpButton_Click(object sender, EventArgs e)
+        {
+            var differences = new Dictionary<string, string>();
+            activeSaveFile = new SaveFileHelper(new List<INodeParser> { new CharacterCustomizationAppearancesParser() });
+
+            foreach (string appearanceName in appearanceNodes.Keys)
+            {
+                var uniqueKey = 0;
+                var currentAppearance = appearanceNodes[appearanceName];
+                foreach (CharacterCustomizationAppearances.AppearanceSection section in currentAppearance.FirstSection.AppearanceSections)
+                {
+                    var baseSection = baseAppearanceNode.FirstSection.AppearanceSections.Where(x => x.SectionName == section.SectionName).FirstOrDefault();
+
+                    foreach (CharacterCustomizationAppearances.HashValueEntry mainEntry in section.MainList)
+                    {
+                        var baseMainEntry = baseSection.MainList.Where(x => activeSaveFile.CompareMainListAppearanceEntries(x.SecondString, mainEntry.SecondString)).FirstOrDefault();
+
+                        if (baseMainEntry != null)
+                        {
+                            if (mainEntry.FirstString != baseMainEntry.FirstString)
+                            {
+                                differences.Add(appearanceName + "-" + uniqueKey.ToString(), "first.main.first." + mainEntry.SecondString + "::" + mainEntry.FirstString);
+                                uniqueKey++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            var fileWindow = new SaveFileDialog();
+            if (fileWindow.ShowDialog() == DialogResult.OK)
+            {
+                File.WriteAllText(fileWindow.FileName, JsonConvert.SerializeObject(differences, Formatting.Indented));
+            }
         }
 
         private void swapSaveType_Click(object sender, EventArgs e)
